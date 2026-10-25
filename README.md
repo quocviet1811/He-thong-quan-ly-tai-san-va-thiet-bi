@@ -50,11 +50,19 @@ Trình duyệt --127.0.0.1:8186--> nginx --frontend--> app:4000
                                           app --backend (internal)--> postgres:5432
 pgAdmin --backend (internal)-----------------------> postgres:5432
 Trình duyệt --127.0.0.1:8187--> pgAdmin --admin network
+Prometheus --monitoring--> PostgreSQL Exporter --backend--> postgres
+Prometheus --monitoring--> Nginx Exporter --frontend--> nginx:8080/stub_status
+Prometheus --monitoring--> Docker Stats Exporter --docker_stats--> Docker Stats Gateway
+                                                        Docker Stats Gateway --docker_api--> Docker Socket Proxy
+Trình duyệt --127.0.0.1:3190--> Grafana --monitoring--> Prometheus
 ```
 
 - `frontend` chỉ chứa Nginx và app; Nginx không tham gia backend.
 - `backend` là network `internal`, chứa app, PostgreSQL và pgAdmin.
 - `admin` chỉ nối pgAdmin, ngoài cổng quản trị bind vào `127.0.0.1`.
+- `monitoring` chứa Prometheus và các exporter; PostgreSQL Exporter/Nginx Exporter chỉ tham gia network ứng dụng tối thiểu cần thiết.
+- Grafana và Prometheus cùng nối network `monitoring`; Grafana chỉ publish loopback trên cổng 3190.
+- `docker_api` là network `internal`, chỉ nối Docker Socket Proxy và Docker Stats Gateway. `docker_stats` là network `internal`, chỉ nối gateway và exporter. Prometheus, app, PostgreSQL, Nginx và pgAdmin không thể gọi Docker API trực tiếp.
 - App kết nối database qua hostname service `postgres`, không dùng IP hoặc port host.
 
 ### Đăng nhập và kết nối pgAdmin
@@ -111,6 +119,75 @@ docker compose exec postgres sh -c 'psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -
 - Ngày, loại, nội dung, người thực hiện, chi phí và ngày bảo trì kế tiếp được kiểm tra ở backend trước khi ghi.
 - Không có chức năng xóa lịch sử bảo trì; tài sản có lịch sử tiếp tục được bảo vệ bởi khóa ngoại `ON DELETE RESTRICT`.
 
+## Giám sát PostgreSQL bằng Prometheus
+
+Prometheus và PostgreSQL Exporter được chạy cùng Docker Compose:
+
+- Prometheus dùng image `prom/prometheus:v3.15.1`, lưu dữ liệu ở named volume `asset_management_16_prometheus_data` và giữ tối đa 7 ngày hoặc 1 GB dữ liệu time-series.
+- PostgreSQL Exporter dùng image `prometheuscommunity/postgres-exporter:v0.20.1`, thu thập metrics từ PostgreSQL hiện có qua `postgres:5432`.
+- Giao diện Prometheus chỉ bind loopback tại <http://localhost:9190>. Exporter không publish cổng ra host.
+- Prometheus và exporter dùng network riêng `asset_management_16_monitoring`; exporter đồng thời kết nối network backend để truy cập PostgreSQL. PostgreSQL không được nối vào network monitoring. Đây là bridge network riêng (không `internal`) để Docker Desktop có thể publish UI Prometheus; cổng UI vẫn chỉ bind loopback và exporter không publish cổng host.
+- Tài khoản `asset_monitor` chỉ được cấp quyền PostgreSQL `pg_monitor`, không cấp quyền đọc bảng nghiệp vụ. Mật khẩu riêng được đặt trong `.env` dưới `POSTGRES_EXPORTER_PASSWORD`; không dùng mật khẩu ứng dụng hoặc đưa mật khẩu vào URL datasource.
+- `monitoring/prometheus/prometheus.yml` định nghĩa scrape job `prometheus`, `postgres`, `nginx` và `docker_stats`.
+- Grafana dùng image cố định `grafana/grafana:12.2.1`, lưu cấu hình/dữ liệu trong named volume `asset_management_16_grafana_data`; Prometheus datasource và dashboard AssetCare được provision tự động từ các file trong `monitoring/grafana/`.
+- Nginx Exporter dùng `nginx/nginx-prometheus-exporter:1.5.3`. Nginx cung cấp `stub_status` riêng trên cổng nội bộ 8080; `/stub_status` qua website ở cổng 80 trả 404. Exporter chỉ kết nối qua frontend và monitoring network, không publish cổng host.
+- Docker Stats Exporter là giải pháp thay thế độc lập, **không phải cAdvisor**. cAdvisor `ghcr.io/google/cadvisor:v0.60.6` đã được thử nhưng không tạo được metrics CPU/RAM theo container trên Docker Desktop/WSL2 do thiếu containerd socket nội bộ; cAdvisor không nằm trong Compose hiện tại.
+- Docker Stats Exporter dùng Node.js built-in APIs, chạy non-root, chỉ nhận snapshot đã lọc từ Docker Stats Gateway. CPU lấy từ `cpu_stats.cpu_usage.total_usage` của Docker Engine (nanoseconds chuyển thành cumulative CPU seconds; không phải CPU percentage). Bộ nhớ lấy trực tiếp từ `memory_stats.usage` (bytes). Không xuất working-set metric: trên Docker Desktop/WSL2, phép tính trừ inactive-file không đối chiếu ổn định với `docker stats` cho mọi container, nên không gắn nhãn working set cho số liệu chưa xác minh được.
+- Docker Socket Proxy dùng `tecnativa/docker-socket-proxy:v0.5.0`, không `privileged`, không publish API port; chỉ proxy mount Docker socket ở chế độ read-only. `POST=0`, `CONTAINERS=1`; các nhóm `INFO`, `VERSION`, `PING`, `EVENTS` tắt. Tài liệu của proxy cho biết quyền `CONTAINERS=1` cho phép các request GET trong nhóm container, gồm cả một số API đọc rộng như logs. Vì vậy proxy chỉ nối với gateway trên network `docker_api`; gateway không có socket và chỉ thực hiện GET `/containers/json` với bộ lọc project cố định cùng GET `/containers/{id}/stats?stream=false` cho ID có nhãn project chính xác. Gateway chỉ trả snapshot đã lọc, không có endpoint chuyển tiếp tùy ý; logs, archive, exec, ghi/xóa/dừng/tạo container không được expose qua gateway.
+- Docker API vẫn là quyền đọc ở cấp Docker Engine. Nếu gateway bị xâm nhập, proxy phía sau có thể đọc thêm metadata/logs của các container khác trên cùng Engine; giới hạn này không thể loại bỏ hoàn toàn bằng biến cấu hình của image proxy đã chọn. Giảm thiểu hiện tại là network nội bộ chỉ gồm proxy/gateway, exporter không nối trực tiếp vào `docker_api`, không có cổng host, không có API ghi, gateway/exporter non-root và giới hạn 64 MiB mỗi container. Không mount containerd socket và không cấp `privileged`.
+
+Đặt mật khẩu giám sát riêng trong `.env` trước khi khởi chạy. Để tạo/cập nhật role giám sát an toàn trên database hiện tại mà không reset dữ liệu, trong PowerShell từ thư mục dự án:
+
+```powershell
+$envFile = Get-Content .\.env
+$monitorPassword = ($envFile | Where-Object { $_ -match '^POSTGRES_EXPORTER_PASSWORD=' } | Select-Object -First 1) -replace '^POSTGRES_EXPORTER_PASSWORD=', ''
+if (-not $monitorPassword -or $monitorPassword -eq 'replace_with_a_unique_monitoring_secret') {
+    throw 'Set a unique POSTGRES_EXPORTER_PASSWORD in .env first.'
+}
+$psqlScript = "\set monitor_password $monitorPassword`nSELECT format('CREATE ROLE asset_monitor LOGIN PASSWORD %L', :'monitor_password') WHERE NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'asset_monitor') \gexec`nALTER ROLE asset_monitor LOGIN PASSWORD :'monitor_password';`nGRANT pg_monitor TO asset_monitor;"
+$psqlScript | docker compose exec -T postgres psql -v ON_ERROR_STOP=1 -U asset_app -d asset_management
+docker compose up -d postgres-exporter prometheus
+```
+
+`pg_monitor` là role giám sát có sẵn của PostgreSQL. Mật khẩu được gửi cho `psql` qua standard input, không nằm trong command argument hoặc datasource URL. Với database mới, chạy bước tạo role sau khi PostgreSQL healthy; câu lệnh không xóa hoặc sửa các bảng nghiệp vụ.
+
+Đặt `GRAFANA_ADMIN_PASSWORD` thành mật khẩu riêng trong `.env` (không commit file này), sau đó khởi chạy Grafana:
+
+```powershell
+docker compose up -d grafana
+```
+
+Mở <http://127.0.0.1:3190>, đăng nhập bằng username `admin` và mật khẩu trong `.env`. Dashboard `AssetCare - Monitoring` được tự động nạp cùng Prometheus datasource; các panel hiển thị target health, PostgreSQL connections, Nginx request rate, CPU theo service và raw Docker API memory theo service.
+
+Khởi chạy thêm Docker Stats Exporter và các thành phần giới hạn API:
+
+```powershell
+docker compose up -d --build docker-socket-proxy docker-stats-gateway docker-stats-exporter
+docker compose restart prometheus
+```
+
+Kiểm tra target và truy vấn metrics hiện tại:
+
+```powershell
+Invoke-RestMethod http://127.0.0.1:9190/api/v1/targets
+Invoke-RestMethod -Uri 'http://127.0.0.1:9190/api/v1/query?query=up%7Bjob%3D%22postgres%22%7D'
+Invoke-RestMethod -Uri 'http://127.0.0.1:9190/api/v1/query?query=pg_up'
+Invoke-RestMethod -Uri 'http://127.0.0.1:9190/api/v1/query?query=pg_stat_database_numbackends'
+Invoke-RestMethod -Uri 'http://127.0.0.1:9190/api/v1/query?query=nginx_up'
+Invoke-RestMethod -Uri 'http://127.0.0.1:9190/api/v1/query?query=nginx_http_requests_total'
+```
+
+Truy vấn metrics container trong Prometheus:
+
+```promql
+asset16_container_cpu_usage_seconds_total{project="asset-management-16"}
+rate(asset16_container_cpu_usage_seconds_total{project="asset-management-16"}[5m])
+asset16_container_memory_usage_bytes{project="asset-management-16"}
+asset16_container_scrape_success{project="asset-management-16"}
+```
+
+`rate(...[5m])` cho biết số CPU core trung bình đã dùng; metric CPU gốc là bộ đếm cumulative CPU seconds. Metric RAM là `memory_stats.usage` nguyên bản từ API, không phải phần trăm hoặc working set. Đây là raw API usage, không phải số hiển thị giống hệt `docker stats`; Docker CLI trừ cache và lấy mẫu ở thời điểm riêng. Trên Docker Desktop/WSL2, phép trừ inactive-file không đối chiếu ổn định với CLI cho mọi container, nên không xuất metric working set.
+
 ## Cấu trúc
 
 ```text
@@ -135,6 +212,25 @@ database/
 └── seed.sql
 nginx/
 └── default.conf
+monitoring/
+├── prometheus/
+│   └── prometheus.yml
+├── postgres-exporter/
+│   └── postgres_exporter.yml
+└── grafana/
+    ├── dashboards/
+    │   └── assetcare-overview.json
+    └── provisioning/
+        ├── dashboards/
+        │   └── assetcare.yml
+        └── datasources/
+            └── prometheus.yml
+├── docker-stats-gateway/
+│   ├── Dockerfile
+│   └── server.js
+└── docker-stats-exporter/
+    ├── Dockerfile
+    └── server.js
 .env.example
 .gitignore
 README.md
@@ -143,4 +239,4 @@ pgadmin/
 └── servers.json
 ```
 
-Docker Compose có bốn service `app`, `postgres`, `nginx` và `pgadmin`; ba network `frontend`, `backend` và `admin`; hai named volume riêng cho PostgreSQL và pgAdmin. Monitoring/logging chưa nằm trong phạm vi hiện tại.
+Docker Compose có mười một service `app`, `postgres`, `nginx`, `pgadmin`, `postgres-exporter`, `nginx-exporter`, `prometheus`, `grafana`, `docker-socket-proxy`, `docker-stats-gateway` và `docker-stats-exporter`; sáu network `frontend`, `backend`, `admin`, `monitoring`, `docker_api` và `docker_stats`; bốn named volume riêng cho PostgreSQL, pgAdmin, Prometheus và Grafana. cAdvisor chưa được triển khai do giới hạn runtime nêu trên; Loki và Promtail chưa nằm trong phạm vi bước này.

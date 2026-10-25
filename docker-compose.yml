@@ -77,6 +77,109 @@ services:
     networks:
       - frontend
 
+  nginx-exporter:
+    image: nginx/nginx-prometheus-exporter:1.5.3
+    restart: unless-stopped
+    command:
+      - --nginx.scrape-uri=http://nginx:8080/stub_status
+    depends_on:
+      - nginx
+    expose:
+      - "9113"
+    mem_limit: 64m
+    networks:
+      - frontend
+      - monitoring
+
+  docker-socket-proxy:
+    image: tecnativa/docker-socket-proxy:v0.5.0
+    restart: unless-stopped
+    environment:
+      CONTAINERS: "1"
+      EVENTS: "0"
+      INFO: "0"
+      PING: "0"
+      POST: "0"
+      VERSION: "0"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    expose:
+      - "2375"
+    mem_limit: 64m
+    security_opt:
+      - no-new-privileges:true
+    networks:
+      - docker_api
+
+  docker-stats-gateway:
+    build:
+      context: ./monitoring/docker-stats-gateway
+    restart: unless-stopped
+    environment:
+      COMPOSE_PROJECT_NAME: asset-management-16
+      DOCKER_PROXY_URL: http://docker-socket-proxy:2375
+      PORT: 9101
+    depends_on:
+      docker-socket-proxy:
+        condition: service_started
+    expose:
+      - "9101"
+    read_only: true
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,size=8m
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    healthcheck:
+      test:
+        - CMD
+        - node
+        - -e
+        - "fetch('http://127.0.0.1:9101/health').then(r => process.exit(r.ok ? 0 : 1)).catch(() => process.exit(1))"
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 5s
+    mem_limit: 64m
+    networks:
+      - docker_api
+      - docker_stats
+
+  docker-stats-exporter:
+    build:
+      context: ./monitoring/docker-stats-exporter
+    restart: unless-stopped
+    environment:
+      DOCKER_STATS_URL: http://docker-stats-gateway:9101/snapshot
+      PORT: 9100
+    depends_on:
+      docker-stats-gateway:
+        condition: service_healthy
+    expose:
+      - "9100"
+    read_only: true
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,size=8m
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    healthcheck:
+      test:
+        - CMD
+        - node
+        - -e
+        - "fetch('http://127.0.0.1:9100/health').then(r => process.exit(r.ok ? 0 : 1)).catch(() => process.exit(1))"
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 5s
+    mem_limit: 64m
+    networks:
+      - docker_stats
+      - monitoring
+
   pgadmin:
     image: dpage/pgadmin4:latest
     restart: unless-stopped
@@ -96,6 +199,64 @@ services:
       - backend
       - admin
 
+  postgres-exporter:
+    image: prometheuscommunity/postgres-exporter:v0.20.1
+    restart: unless-stopped
+    command:
+      - --config.file=/etc/postgres_exporter/postgres_exporter.yml
+    environment:
+      DATA_SOURCE_URI: postgres:5432/${POSTGRES_DB:?Set POSTGRES_DB in .env}?sslmode=disable
+      DATA_SOURCE_USER: ${POSTGRES_EXPORTER_USER:-asset_monitor}
+      DATA_SOURCE_PASS: ${POSTGRES_EXPORTER_PASSWORD:?Set POSTGRES_EXPORTER_PASSWORD in .env}
+    volumes:
+      - ./monitoring/postgres-exporter/postgres_exporter.yml:/etc/postgres_exporter/postgres_exporter.yml:ro
+    depends_on:
+      postgres:
+        condition: service_healthy
+    expose:
+      - "9187"
+    mem_limit: 128m
+    networks:
+      - backend
+      - monitoring
+
+  prometheus:
+    image: prom/prometheus:v3.15.1
+    restart: unless-stopped
+    command:
+      - --config.file=/etc/prometheus/prometheus.yml
+      - --storage.tsdb.path=/prometheus
+      - --storage.tsdb.retention.time=7d
+      - --storage.tsdb.retention.size=1GB
+    ports:
+      - "127.0.0.1:${PROMETHEUS_HOST_PORT:-9190}:9090"
+    volumes:
+      - ./monitoring/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus_data:/prometheus
+    depends_on:
+      - postgres-exporter
+    mem_limit: 512m
+    networks:
+      monitoring:
+        aliases:
+          - prometheus
+
+  grafana:
+    image: grafana/grafana:12.2.1
+    restart: unless-stopped
+    environment:
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:?Set GRAFANA_ADMIN_PASSWORD in .env}
+    depends_on:
+      - prometheus
+    ports:
+      - "127.0.0.1:${GRAFANA_HOST_PORT:-3190}:3000"
+    volumes:
+      - grafana_data:/var/lib/grafana
+      - ./monitoring/grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./monitoring/grafana/dashboards:/var/lib/grafana/dashboards:ro
+    networks:
+      - monitoring
+
 networks:
   backend:
     name: asset_management_16_backend
@@ -104,9 +265,21 @@ networks:
     name: asset_management_16_frontend
   admin:
     name: asset_management_16_admin
+  monitoring:
+    name: asset_management_16_monitoring
+  docker_api:
+    name: asset_management_16_docker_api
+    internal: true
+  docker_stats:
+    name: asset_management_16_docker_stats
+    internal: true
 
 volumes:
   postgres_data:
     name: asset_management_16_postgres_data
   pgadmin_data:
     name: asset_management_16_pgadmin_data
+  prometheus_data:
+    name: asset_management_16_prometheus_data
+  grafana_data:
+    name: asset_management_16_grafana_data
