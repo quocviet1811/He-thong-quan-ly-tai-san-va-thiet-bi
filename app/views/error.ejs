@@ -1,0 +1,18 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title><%= title %> · AssetCare</title>
+    <link rel="stylesheet" href="/styles.css">
+</head>
+<body>
+    <main class="standalone-error">
+        <span class="error-code"><%= typeof statusCode === "number" ? statusCode : "!" %></span>
+        <p class="eyebrow">ASSETCARE</p>
+        <h1><%= title %></h1>
+        <p><%= message %></p>
+        <a class="button button-primary" href="/">Quay lại danh sách tài sản</a>
+    </main>
+</body>
+</html>

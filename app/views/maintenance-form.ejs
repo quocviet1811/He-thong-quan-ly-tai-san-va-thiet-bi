@@ -1,0 +1,139 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="description" content="Biểu mẫu lịch sử bảo trì tài sản">
+    <title><%= isEdit ? "Sửa lịch sử bảo trì" : "Thêm lịch sử bảo trì" %> · AssetCare</title>
+    <link rel="stylesheet" href="/styles.css">
+</head>
+<body>
+    <div class="app-shell">
+        <aside class="sidebar">
+            <a class="brand" href="/" aria-label="Trang chủ">
+                <span class="brand-mark">A</span>
+                <span><strong>AssetCare</strong><small>QUẢN LÝ TÀI SẢN</small></span>
+            </a>
+            <p class="nav-heading">KHÔNG GIAN LÀM VIỆC</p>
+            <nav aria-label="Điều hướng chính">
+                <a class="nav-link" href="/"><span class="nav-icon">⌂</span> Tổng quan</a>
+                <a class="nav-link" href="/#assets"><span class="nav-icon">▦</span> Tài sản &amp; thiết bị</a>
+                <a class="nav-link active" href="/assets/<%= asset.id %>"><span class="nav-icon">↻</span> Lịch sử bảo trì</a>
+            </nav>
+            <div class="sidebar-note">
+                <span class="note-icon">✦</span>
+                <strong>Quản lý tập trung</strong>
+                <p>Theo dõi thiết bị và lịch bảo trì trong cùng một hệ thống.</p>
+            </div>
+            <div class="sidebar-footer">ĐỀ TÀI 16 · QUẢN LÝ TÀI SẢN</div>
+        </aside>
+
+        <main class="main-content">
+            <header class="topbar">
+                <div class="breadcrumb">
+                    <a href="/">Tài sản &amp; thiết bị</a>
+                    <span>/</span>
+                    <a href="/assets/<%= asset.id %>"><%= asset.asset_code %></a>
+                    <span>/</span>
+                    <%= isEdit ? "Chỉnh sửa bảo trì" : "Thêm bảo trì" %>
+                </div>
+                <div class="user-chip">
+                    <span class="user-avatar">NV</span>
+                    <span><strong>Nông Quốc Việt</strong><small>Quản trị viên</small></span>
+                </div>
+            </header>
+
+            <section class="page-heading">
+                <div>
+                    <p class="eyebrow">LỊCH SỬ BẢO TRÌ · <%= asset.asset_code %></p>
+                    <h1><%= isEdit ? "Chỉnh sửa lần bảo trì" : "Ghi nhận bảo trì" %></h1>
+                    <p class="subtitle"><%= asset.name %> · <%= asset.location %></p>
+                </div>
+                <a class="button button-secondary" href="/assets/<%= asset.id %>">← Chi tiết tài sản</a>
+            </section>
+
+            <section class="form-panel" aria-labelledby="maintenance-form-title">
+                <div class="panel-heading form-panel-heading">
+                    <div>
+                        <p class="eyebrow">THÔNG TIN BẢO TRÌ</p>
+                        <h2 id="maintenance-form-title"><%= isEdit ? "Cập nhật thông tin" : "Thông tin lần bảo trì" %></h2>
+                    </div>
+                    <span class="required-note"><span>*</span> Trường bắt buộc</span>
+                </div>
+
+                <% if (errors.length > 0) { %>
+                    <div class="form-errors" role="alert">
+                        <strong>Vui lòng kiểm tra lại thông tin:</strong>
+                        <ul><% errors.forEach(error => { %><li><%= error %></li><% }) %></ul>
+                    </div>
+                <% } %>
+
+                <form class="asset-form" method="post"
+                      action="<%= isEdit ? `/assets/${asset.id}/maintenance/${record.id}/edit` : `/assets/${asset.id}/maintenance` %>">
+                    <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+
+                    <div class="form-grid">
+                        <label class="form-field">
+                            <span>Ngày bảo trì <b>*</b></span>
+                            <input type="date" name="maintenance_date" required
+                                   value="<%= record.maintenance_date %>">
+                        </label>
+
+                        <label class="form-field">
+                            <span>Loại bảo trì <b>*</b></span>
+                            <select name="maintenance_type" required>
+                                <option value="preventive" <%= record.maintenance_type === "preventive" ? "selected" : "" %>>Bảo trì định kỳ</option>
+                                <option value="repair" <%= record.maintenance_type === "repair" ? "selected" : "" %>>Sửa chữa</option>
+                                <option value="inspection" <%= record.maintenance_type === "inspection" ? "selected" : "" %>>Kiểm tra</option>
+                            </select>
+                        </label>
+
+                        <label class="form-field form-field-wide">
+                            <span>Nội dung công việc <b>*</b></span>
+                            <textarea name="description" rows="4" maxlength="8000" required
+                                      placeholder="Mô tả nội dung bảo trì"><%= record.description %></textarea>
+                        </label>
+
+                        <label class="form-field">
+                            <span>Người thực hiện <b>*</b></span>
+                            <input name="performed_by" maxlength="150" required
+                                   value="<%= record.performed_by %>"
+                                   placeholder="Tên người hoặc đơn vị thực hiện">
+                        </label>
+
+                        <label class="form-field">
+                            <span>Chi phí (VND) <b>*</b></span>
+                            <input type="number" name="cost" min="0" max="9999999999.99"
+                                   step="0.01" required value="<%= record.cost %>">
+                        </label>
+
+                        <label class="form-field form-field-wide">
+                            <span>Kết quả</span>
+                            <textarea name="result" rows="3" maxlength="8000"
+                                      placeholder="Kết quả hoặc ghi chú"><%= record.result || "" %></textarea>
+                        </label>
+
+                        <label class="form-field">
+                            <span>Ngày bảo trì tiếp theo</span>
+                            <input type="date" name="next_maintenance_date"
+                                   value="<%= record.next_maintenance_date || "" %>">
+                        </label>
+                    </div>
+
+                    <div class="form-actions">
+                        <a class="button button-secondary" href="/assets/<%= asset.id %>">Hủy</a>
+                        <button class="button button-primary" type="submit">
+                            <%= isEdit ? "Lưu thay đổi" : "Ghi nhận bảo trì" %>
+                        </button>
+                    </div>
+                </form>
+            </section>
+
+            <footer class="page-footer">
+                <span>Hệ thống Quản lý Tài sản / Thiết bị</span>
+                <span>Lịch sử bảo trì được lưu theo từng tài sản</span>
+            </footer>
+        </main>
+    </div>
+</body>
+</html>

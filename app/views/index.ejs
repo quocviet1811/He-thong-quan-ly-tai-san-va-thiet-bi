@@ -1,0 +1,161 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="description" content="Hệ thống quản lý tài sản, thiết bị và lịch sử bảo trì">
+    <title>Quản lý Tài sản / Thiết bị</title>
+    <link rel="stylesheet" href="/styles.css">
+</head>
+<body>
+    <div class="app-shell">
+        <aside class="sidebar">
+            <a class="brand" href="/" aria-label="Trang chủ">
+                <span class="brand-mark">A</span>
+                <span>
+                    <strong>AssetCare</strong>
+                    <small>QUẢN LÝ TÀI SẢN</small>
+                </span>
+            </a>
+
+            <p class="nav-heading">KHÔNG GIAN LÀM VIỆC</p>
+            <nav aria-label="Điều hướng chính">
+                <a class="nav-link" href="/">
+                    <span class="nav-icon">⌂</span> Tổng quan
+                </a>
+                <a class="nav-link active" href="#assets" aria-current="page">
+                    <span class="nav-icon">▦</span> Tài sản &amp; thiết bị
+                </a>
+                <a class="nav-link" href="#maintenance">
+                    <span class="nav-icon">↻</span> Lịch sử bảo trì
+                </a>
+            </nav>
+
+            <div class="sidebar-note">
+                <span class="note-icon">✦</span>
+                <strong>Quản lý tập trung</strong>
+                <p>Theo dõi thiết bị và lịch bảo trì trong cùng một hệ thống.</p>
+            </div>
+
+            <div class="sidebar-footer">ĐỀ TÀI 16 · PHIÊN BẢN KHỞI TẠO</div>
+        </aside>
+
+        <main class="main-content">
+            <header class="topbar">
+                <div class="breadcrumb">Không gian làm việc <span>/</span> Tổng quan</div>
+                <div class="user-chip">
+                    <span class="user-avatar">NV</span>
+                    <span><strong>Nông Quốc Việt</strong><small>Quản trị viên</small></span>
+                </div>
+            </header>
+
+            <section class="page-heading">
+                <div>
+                    <p class="eyebrow">ASSET MANAGEMENT</p>
+                    <h1>Hệ thống Quản lý Tài sản / Thiết bị</h1>
+                    <p class="subtitle">Danh sách tài sản và thiết bị đang được quản lý.</p>
+                </div>
+                <% if (databaseError) { %>
+                    <span class="status-pill status-error"><span></span> Chưa kết nối cơ sở dữ liệu</span>
+                <% } else { %>
+                    <span class="status-pill"><span></span> Đã tải <%= assets.length %> tài sản</span>
+                <% } %>
+            </section>
+
+            <% if (flash) { %>
+                <div class="flash-message flash-<%= flash.type %>" role="status">
+                    <%= flash.message %>
+                </div>
+            <% } %>
+
+            <section class="asset-panel" id="assets" aria-labelledby="asset-list-title">
+                <div class="panel-heading">
+                    <div>
+                        <p class="eyebrow">DANH MỤC QUẢN LÝ</p>
+                        <h2 id="asset-list-title">Tài sản &amp; thiết bị</h2>
+                    </div>
+                    <% if (!databaseError) { %>
+                        <div class="panel-actions">
+                            <span class="record-count"><%= assets.length %> bản ghi</span>
+                            <a class="button button-primary" href="/assets/new">+ Thêm tài sản</a>
+                        </div>
+                    <% } %>
+                </div>
+
+                <% if (databaseError) { %>
+                    <div class="database-notice" role="alert">
+                        <span class="notice-icon">!</span>
+                        <div>
+                            <strong>Chưa thể tải danh sách tài sản</strong>
+                            <p>Cơ sở dữ liệu hiện chưa sẵn sàng. Vui lòng kiểm tra kết nối rồi thử tải lại trang.</p>
+                        </div>
+                    </div>
+                <% } else if (assets.length === 0) { %>
+                    <div class="empty-state">
+                        <span class="empty-icon">▦</span>
+                        <strong>Chưa có tài sản</strong>
+                        <p>Danh sách sẽ hiển thị tại đây khi có dữ liệu.</p>
+                    </div>
+                <% } else { %>
+                    <div class="table-wrap">
+                        <table class="asset-table">
+                            <thead>
+                                <tr>
+                                    <th scope="col">Mã tài sản</th>
+                                    <th scope="col">Tên tài sản</th>
+                                    <th scope="col">Loại tài sản</th>
+                                    <th scope="col">Hãng / Model</th>
+                                    <th scope="col">Vị trí</th>
+                                    <th scope="col">Trạng thái</th>
+                                    <th scope="col">Thao tác</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <% assets.forEach(asset => { %>
+                                    <tr>
+                                        <td class="asset-code"><%= asset.asset_code %></td>
+                                        <td class="asset-name"><%= asset.name %></td>
+                                        <td><%= asset.category_name %></td>
+                                        <td><%= asset.manufacturer_model || "—" %></td>
+                                        <td><%= asset.location %></td>
+                                        <td>
+                                            <span class="asset-status status-<%= asset.status %>">
+                                                <%= asset.statusLabel %>
+                                            </span>
+                                        </td>
+                                        <td>
+                                            <div class="row-actions">
+                                                <a class="text-action" href="/assets/<%= asset.id %>">Xem &amp; bảo trì</a>
+                                                <a class="text-action" href="/assets/<%= asset.id %>/edit">Sửa</a>
+                                                <form method="post" action="/assets/<%= asset.id %>/delete"
+                                                      onsubmit="return confirm('Bạn có chắc muốn xóa tài sản này?');">
+                                                    <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+                                                    <button class="text-action text-danger" type="submit">Xóa</button>
+                                                </form>
+                                            </div>
+                                        </td>
+                                    </tr>
+                                <% }) %>
+                            </tbody>
+                        </table>
+                    </div>
+                <% } %>
+            </section>
+
+            <section class="maintenance-preview" id="maintenance" aria-label="Lịch sử bảo trì">
+                <div class="card-icon violet">↻</div>
+                <div>
+                    <p class="card-label">BƯỚC TIẾP THEO</p>
+                    <h2>Lịch sử bảo trì</h2>
+                    <p>Phần hiển thị lịch sử bảo trì sẽ được triển khai ở bước sau.</p>
+                </div>
+            </section>
+
+            <footer class="page-footer">
+                <span>Hệ thống Quản lý Tài sản / Thiết bị</span>
+                <span>Đề tài thực hành · Triển khai và Quản trị Hệ thống Phần mềm</span>
+            </footer>
+        </main>
+    </div>
+</body>
+</html>

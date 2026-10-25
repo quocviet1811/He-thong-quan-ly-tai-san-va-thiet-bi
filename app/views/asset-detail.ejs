@@ -1,0 +1,155 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="description" content="Chi tiết tài sản">
+    <title><%= asset.name %> · AssetCare</title>
+    <link rel="stylesheet" href="/styles.css">
+</head>
+<body>
+    <div class="app-shell">
+        <aside class="sidebar">
+            <a class="brand" href="/" aria-label="Trang chủ">
+                <span class="brand-mark">A</span>
+                <span><strong>AssetCare</strong><small>QUẢN LÝ TÀI SẢN</small></span>
+            </a>
+            <p class="nav-heading">KHÔNG GIAN LÀM VIỆC</p>
+            <nav aria-label="Điều hướng chính">
+                <a class="nav-link" href="/"><span class="nav-icon">⌂</span> Tổng quan</a>
+                <a class="nav-link active" href="/#assets"><span class="nav-icon">▦</span> Tài sản &amp; thiết bị</a>
+                <a class="nav-link" href="/#maintenance"><span class="nav-icon">↻</span> Lịch sử bảo trì</a>
+            </nav>
+            <div class="sidebar-note">
+                <span class="note-icon">✦</span>
+                <strong>Quản lý tập trung</strong>
+                <p>Theo dõi thiết bị và lịch bảo trì trong cùng một hệ thống.</p>
+            </div>
+            <div class="sidebar-footer">ĐỀ TÀI 16 · QUẢN LÝ TÀI SẢN</div>
+        </aside>
+
+        <main class="main-content">
+            <header class="topbar">
+                <div class="breadcrumb"><a href="/">Tài sản &amp; thiết bị</a> <span>/</span> Chi tiết</div>
+                <div class="user-chip">
+                    <span class="user-avatar">NV</span>
+                    <span><strong>Nông Quốc Việt</strong><small>Quản trị viên</small></span>
+                </div>
+            </header>
+
+            <section class="page-heading">
+                <div>
+                    <p class="eyebrow">CHI TIẾT TÀI SẢN · <%= asset.asset_code %></p>
+                    <h1><%= asset.name %></h1>
+                    <p class="subtitle">Thông tin hiện được lưu trong cơ sở dữ liệu.</p>
+                </div>
+                <div class="heading-actions">
+                    <a class="button button-secondary" href="/">Danh sách</a>
+                    <a class="button button-primary" href="/assets/<%= asset.id %>/edit">Chỉnh sửa</a>
+                </div>
+            </section>
+
+            <% if (flash) { %>
+                <div class="flash-message flash-<%= flash.type %>" role="status"><%= flash.message %></div>
+            <% } %>
+
+            <% if (errorMessage) { %>
+                <div class="flash-message flash-error" role="alert"><%= errorMessage %></div>
+            <% } %>
+
+            <section class="detail-panel" aria-label="Thông tin tài sản">
+                <dl class="detail-grid">
+                    <div><dt>Mã tài sản</dt><dd><%= asset.asset_code %></dd></div>
+                    <div><dt>Tên tài sản</dt><dd><%= asset.name %></dd></div>
+                    <div><dt>Loại tài sản</dt><dd><%= asset.category_name %></dd></div>
+                    <div><dt>Trạng thái</dt><dd><span class="asset-status status-<%= asset.status %>"><%= asset.statusLabel %></span></dd></div>
+                    <div><dt>Hãng sản xuất</dt><dd><%= asset.manufacturer || "—" %></dd></div>
+                    <div><dt>Model</dt><dd><%= asset.model || "—" %></dd></div>
+                    <div><dt>Số serial</dt><dd><%= asset.serial_number || "—" %></dd></div>
+                    <div><dt>Vị trí sử dụng</dt><dd><%= asset.location %></dd></div>
+                    <div><dt>Ngày mua</dt><dd><%= asset.purchase_date || "—" %></dd></div>
+                    <div><dt>Hết hạn bảo hành</dt><dd><%= asset.warranty_until || "—" %></dd></div>
+                    <div><dt>Ngày tạo</dt><dd><%= asset.created_at.toLocaleString("vi-VN") %></dd></div>
+                    <div><dt>Cập nhật lần cuối</dt><dd><%= asset.updated_at.toLocaleString("vi-VN") %></dd></div>
+                </dl>
+            </section>
+
+            <section class="maintenance-panel" id="maintenance" aria-labelledby="maintenance-title">
+                <div class="panel-heading">
+                    <div>
+                        <p class="eyebrow">THEO DÕI THIẾT BỊ</p>
+                        <h2 id="maintenance-title">Lịch sử bảo trì</h2>
+                    </div>
+                    <a class="button button-primary" href="/assets/<%= asset.id %>/maintenance/new">
+                        + Thêm lịch sử bảo trì
+                    </a>
+                </div>
+
+                <% if (maintenanceRecords.length === 0) { %>
+                    <div class="maintenance-empty">
+                        <span class="empty-icon">↻</span>
+                        <strong>Chưa có lịch sử bảo trì</strong>
+                        <p>Các lần bảo trì của tài sản này sẽ được hiển thị tại đây.</p>
+                    </div>
+                <% } else { %>
+                    <div class="maintenance-list">
+                        <% maintenanceRecords.forEach(record => { %>
+                            <article class="maintenance-record">
+                                <div class="maintenance-record-heading">
+                                    <div>
+                                        <span class="maintenance-date"><%= record.maintenance_date %></span>
+                                        <span class="maintenance-type"><%= record.maintenance_type_label %></span>
+                                    </div>
+                                    <a class="text-action"
+                                       href="/assets/<%= asset.id %>/maintenance/<%= record.id %>/edit">
+                                        Chỉnh sửa
+                                    </a>
+                                </div>
+                                <dl class="maintenance-fields">
+                                    <div class="maintenance-description">
+                                        <dt>Nội dung</dt>
+                                        <dd><%= record.description %></dd>
+                                    </div>
+                                    <div>
+                                        <dt>Người thực hiện</dt>
+                                        <dd><%= record.performed_by %></dd>
+                                    </div>
+                                    <div>
+                                        <dt>Chi phí</dt>
+                                        <dd><%= Number(record.cost).toLocaleString("vi-VN", { maximumFractionDigits: 2 }) %> ₫</dd>
+                                    </div>
+                                    <div>
+                                        <dt>Kết quả</dt>
+                                        <dd><%= record.result || "—" %></dd>
+                                    </div>
+                                    <div>
+                                        <dt>Bảo trì tiếp theo</dt>
+                                        <dd><%= record.next_maintenance_date || "—" %></dd>
+                                    </div>
+                                </dl>
+                            </article>
+                        <% }) %>
+                    </div>
+                <% } %>
+            </section>
+
+            <section class="delete-panel">
+                <div>
+                    <h2>Xóa tài sản</h2>
+                    <p>Tài sản có lịch sử bảo trì sẽ không thể xóa.</p>
+                </div>
+                <form method="post" action="/assets/<%= asset.id %>/delete"
+                      onsubmit="return confirm('Bạn có chắc muốn xóa tài sản này? Thao tác này không thể hoàn tác.');">
+                    <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+                    <button class="button button-danger" type="submit">Xóa tài sản</button>
+                </form>
+            </section>
+
+            <footer class="page-footer">
+                <span>Hệ thống Quản lý Tài sản / Thiết bị</span>
+                <span>Chi tiết tài sản</span>
+            </footer>
+        </main>
+    </div>
+</body>
+</html>

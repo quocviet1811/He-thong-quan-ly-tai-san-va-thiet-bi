@@ -1,0 +1,163 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="description" content="Biểu mẫu quản lý tài sản">
+    <title><%= isEdit ? "Sửa tài sản" : "Thêm tài sản" %> · AssetCare</title>
+    <link rel="stylesheet" href="/styles.css">
+</head>
+<body>
+    <div class="app-shell">
+        <aside class="sidebar">
+            <a class="brand" href="/" aria-label="Trang chủ">
+                <span class="brand-mark">A</span>
+                <span><strong>AssetCare</strong><small>QUẢN LÝ TÀI SẢN</small></span>
+            </a>
+            <p class="nav-heading">KHÔNG GIAN LÀM VIỆC</p>
+            <nav aria-label="Điều hướng chính">
+                <a class="nav-link" href="/"><span class="nav-icon">⌂</span> Tổng quan</a>
+                <a class="nav-link active" href="/#assets"><span class="nav-icon">▦</span> Tài sản &amp; thiết bị</a>
+                <a class="nav-link" href="/#maintenance"><span class="nav-icon">↻</span> Lịch sử bảo trì</a>
+            </nav>
+            <div class="sidebar-note">
+                <span class="note-icon">✦</span>
+                <strong>Quản lý tập trung</strong>
+                <p>Theo dõi thiết bị và lịch bảo trì trong cùng một hệ thống.</p>
+            </div>
+            <div class="sidebar-footer">ĐỀ TÀI 16 · QUẢN LÝ TÀI SẢN</div>
+        </aside>
+
+        <main class="main-content">
+            <header class="topbar">
+                <div class="breadcrumb"><a href="/">Tài sản &amp; thiết bị</a> <span>/</span> <%= isEdit ? "Chỉnh sửa" : "Thêm mới" %></div>
+                <div class="user-chip">
+                    <span class="user-avatar">NV</span>
+                    <span><strong>Nông Quốc Việt</strong><small>Quản trị viên</small></span>
+                </div>
+            </header>
+
+            <section class="page-heading">
+                <div>
+                    <p class="eyebrow">QUẢN LÝ DANH MỤC</p>
+                    <h1><%= isEdit ? "Chỉnh sửa tài sản" : "Thêm tài sản mới" %></h1>
+                    <p class="subtitle">Thông tin được kiểm tra ở máy chủ trước khi lưu vào PostgreSQL.</p>
+                </div>
+                <a class="button button-secondary" href="/">← Danh sách tài sản</a>
+            </section>
+
+            <% if (flash) { %>
+                <div class="flash-message flash-<%= flash.type %>" role="status"><%= flash.message %></div>
+            <% } %>
+
+            <section class="form-panel" aria-labelledby="asset-form-title">
+                <div class="panel-heading form-panel-heading">
+                    <div>
+                        <p class="eyebrow">THÔNG TIN TÀI SẢN</p>
+                        <h2 id="asset-form-title"><%= isEdit ? "Cập nhật thông tin" : "Thông tin thiết bị" %></h2>
+                    </div>
+                    <span class="required-note"><span>*</span> Trường bắt buộc</span>
+                </div>
+
+                <% if (errors.length > 0) { %>
+                    <div class="form-errors" role="alert">
+                        <strong>Vui lòng kiểm tra lại thông tin:</strong>
+                        <ul>
+                            <% errors.forEach(error => { %><li><%= error %></li><% }) %>
+                        </ul>
+                    </div>
+                <% } %>
+
+                <form class="asset-form" method="post" action="<%= isEdit ? `/assets/${asset.id}/edit` : '/assets' %>">
+                    <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+
+                    <div class="form-grid">
+                        <label class="form-field">
+                            <span>Mã tài sản <b>*</b></span>
+                            <input name="asset_code" maxlength="50" required
+                                   value="<%= asset.asset_code %>" autocomplete="off"
+                                   placeholder="Ví dụ: AST-COMP-006">
+                        </label>
+
+                        <label class="form-field">
+                            <span>Tên tài sản <b>*</b></span>
+                            <input name="name" maxlength="150" required
+                                   value="<%= asset.name %>" placeholder="Tên thiết bị">
+                        </label>
+
+                        <label class="form-field">
+                            <span>Loại tài sản <b>*</b></span>
+                            <select name="category_id" required>
+                                <option value="">Chọn loại tài sản</option>
+                                <% categories.forEach(category => { %>
+                                    <option value="<%= category.id %>"
+                                        <%= String(asset.category_id) === String(category.id) ? "selected" : "" %>>
+                                        <%= category.name %>
+                                    </option>
+                                <% }) %>
+                            </select>
+                        </label>
+
+                        <label class="form-field">
+                            <span>Trạng thái <b>*</b></span>
+                            <select name="status" required>
+                                <option value="in_use" <%= asset.status === "in_use" ? "selected" : "" %>>Đang sử dụng</option>
+                                <option value="under_maintenance" <%= asset.status === "under_maintenance" ? "selected" : "" %>>Đang bảo trì</option>
+                                <option value="retired" <%= asset.status === "retired" ? "selected" : "" %>>Đã thanh lý</option>
+                            </select>
+                        </label>
+
+                        <label class="form-field">
+                            <span>Hãng sản xuất</span>
+                            <input name="manufacturer" maxlength="100"
+                                   value="<%= asset.manufacturer || '' %>" placeholder="Ví dụ: Dell">
+                        </label>
+
+                        <label class="form-field">
+                            <span>Model</span>
+                            <input name="model" maxlength="100"
+                                   value="<%= asset.model || '' %>" placeholder="Tên model">
+                        </label>
+
+                        <label class="form-field">
+                            <span>Số serial</span>
+                            <input name="serial_number" maxlength="100"
+                                   value="<%= asset.serial_number || '' %>" placeholder="Số serial thiết bị">
+                        </label>
+
+                        <label class="form-field">
+                            <span>Vị trí sử dụng <b>*</b></span>
+                            <input name="location" maxlength="150" required
+                                   value="<%= asset.location %>" placeholder="Ví dụ: Phòng Hành chính">
+                        </label>
+
+                        <label class="form-field">
+                            <span>Ngày mua</span>
+                            <input type="date" name="purchase_date"
+                                   value="<%= asset.purchase_date || '' %>">
+                        </label>
+
+                        <label class="form-field">
+                            <span>Ngày hết hạn bảo hành</span>
+                            <input type="date" name="warranty_until"
+                                   value="<%= asset.warranty_until || '' %>">
+                        </label>
+                    </div>
+
+                    <div class="form-actions">
+                        <a class="button button-secondary" href="/">Hủy</a>
+                        <button class="button button-primary" type="submit">
+                            <%= isEdit ? "Lưu thay đổi" : "Thêm tài sản" %>
+                        </button>
+                    </div>
+                </form>
+            </section>
+
+            <footer class="page-footer">
+                <span>Hệ thống Quản lý Tài sản / Thiết bị</span>
+                <span>Dữ liệu được lưu trong PostgreSQL</span>
+            </footer>
+        </main>
+    </div>
+</body>
+</html>
