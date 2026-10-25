@@ -136,6 +136,40 @@ Prometheus và PostgreSQL Exporter được chạy cùng Docker Compose:
 - Docker Socket Proxy dùng `tecnativa/docker-socket-proxy:v0.5.0`, không `privileged`, không publish API port; chỉ proxy mount Docker socket ở chế độ read-only. `POST=0`, `CONTAINERS=1`; các nhóm `INFO`, `VERSION`, `PING`, `EVENTS` tắt. Tài liệu của proxy cho biết quyền `CONTAINERS=1` cho phép các request GET trong nhóm container, gồm cả một số API đọc rộng như logs. Vì vậy proxy chỉ nối với gateway trên network `docker_api`; gateway không có socket và chỉ thực hiện GET `/containers/json` với bộ lọc project cố định cùng GET `/containers/{id}/stats?stream=false` cho ID có nhãn project chính xác. Gateway chỉ trả snapshot đã lọc, không có endpoint chuyển tiếp tùy ý; logs, archive, exec, ghi/xóa/dừng/tạo container không được expose qua gateway.
 - Docker API vẫn là quyền đọc ở cấp Docker Engine. Nếu gateway bị xâm nhập, proxy phía sau có thể đọc thêm metadata/logs của các container khác trên cùng Engine; giới hạn này không thể loại bỏ hoàn toàn bằng biến cấu hình của image proxy đã chọn. Giảm thiểu hiện tại là network nội bộ chỉ gồm proxy/gateway, exporter không nối trực tiếp vào `docker_api`, không có cổng host, không có API ghi, gateway/exporter non-root và giới hạn 64 MiB mỗi container. Không mount containerd socket và không cấp `privileged`.
 
+## Log Nginx với Loki và Promtail
+
+```text
+Nginx access log (JSON file) → Promtail → Loki → Grafana Explore
+```
+
+- Nginx ghi access log JSON đồng thời ra stdout và file `access.json`; log chỉ chứa timestamp, method, path không query string, status và request duration. Không ghi cookie, authorization header hoặc request body.
+- Named volume `asset_management_16_nginx_logs` chỉ chia sẻ file log giữa Nginx và Promtail; Promtail mount volume read-only và chỉ đọc file access log của Nginx trong volume này.
+- Loki dùng `grafana/loki:3.7.0`, lưu ở named volume `asset_management_16_loki_data`, retention 72 giờ; Promtail dùng `grafana/promtail:3.6.11` và push tới `http://loki:3100/loki/api/v1/push`.
+- Cả Loki và Promtail chỉ tham gia network monitoring, không publish cổng host. Grafana tự provision Loki datasource `http://loki:3100`; mở Grafana tại <http://127.0.0.1:3190>, vào Explore và chọn Loki.
+- Promtail là công nghệ bắt buộc theo đề, nhưng đã kết thúc vòng đời hỗ trợ từ ngày 02/03/2026; dự án chỉ sử dụng cho môi trường demo môn học, không khuyến nghị triển khai production.
+- Ba truy vấn LogQL đã kiểm tra trên dữ liệu thực:
+
+```logql
+{job="assetcare_nginx"}
+count_over_time({job="assetcare_nginx"}[5m])
+sum by (status) (
+  count_over_time({job="assetcare_nginx"} | json [5m])
+)
+```
+
+Truy vấn thứ ba parse trường `status` từ JSON trước khi đếm. Kết quả phụ thuộc log đã được thu thập trong khoảng thời gian truy vấn.
+
+## Biện pháp bảo mật có bằng chứng
+
+| Biện pháp | Bằng chứng triển khai |
+| --- | --- |
+| CSRF protection và kiểm tra dữ liệu đầu vào | `app/index.js` dùng synchronizer token cho request; `app/validation.js` kiểm tra ID, độ dài, trạng thái và ngày tháng. |
+| Parameterized SQL | `app/index.js` truyền giá trị qua tham số `$1`, `$2` tới `db.query`, không ghép dữ liệu đầu vào vào câu SQL. |
+| Security headers và giới hạn access log | `nginx/default.conf` đặt `X-Content-Type-Options`, `X-Frame-Options`, `Referrer-Policy`; access log dùng `$uri` và không ghi query string, cookie, authorization header hoặc body. |
+| Giảm quyền container ứng dụng | `app/Dockerfile` chạy bằng user `node`; service `app` trong `docker-compose.yml` dùng filesystem read-only, `no-new-privileges` và bỏ toàn bộ Linux capabilities. |
+| Tách network và giới hạn Docker API | Các service được nối vào network theo chức năng trong `docker-compose.yml`; Docker Socket Proxy đặt `POST=0` trên network nội bộ riêng `docker_api`. |
+| Không đưa file secrets vào Git | `.gitignore` loại `.env` và `.env.*`, chỉ cho phép `.env.example`; mật khẩu runtime được đọc từ `.env`. |
+
 Đặt mật khẩu giám sát riêng trong `.env` trước khi khởi chạy. Để tạo/cập nhật role giám sát an toàn trên database hiện tại mà không reset dữ liệu, trong PowerShell từ thư mục dự án:
 
 ```powershell
@@ -239,4 +273,4 @@ pgadmin/
 └── servers.json
 ```
 
-Docker Compose có mười một service `app`, `postgres`, `nginx`, `pgadmin`, `postgres-exporter`, `nginx-exporter`, `prometheus`, `grafana`, `docker-socket-proxy`, `docker-stats-gateway` và `docker-stats-exporter`; sáu network `frontend`, `backend`, `admin`, `monitoring`, `docker_api` và `docker_stats`; bốn named volume riêng cho PostgreSQL, pgAdmin, Prometheus và Grafana. cAdvisor chưa được triển khai do giới hạn runtime nêu trên; Loki và Promtail chưa nằm trong phạm vi bước này.
+Docker Compose có mười ba service `app`, `postgres`, `nginx`, `pgadmin`, `postgres-exporter`, `nginx-exporter`, `prometheus`, `grafana`, `loki`, `promtail`, `docker-socket-proxy`, `docker-stats-gateway` và `docker-stats-exporter`; sáu network `frontend`, `backend`, `admin`, `monitoring`, `docker_api` và `docker_stats`; sáu named volume riêng cho PostgreSQL, pgAdmin, Prometheus, Grafana, Loki và Nginx logs. cAdvisor chưa được triển khai do giới hạn runtime nêu trên.

@@ -74,6 +74,7 @@ services:
       - "127.0.0.1:${NGINX_HOST_PORT:-8186}:80"
     volumes:
       - ./nginx/default.conf:/etc/nginx/conf.d/default.conf:ro
+      - nginx_logs:/var/log/nginx
     networks:
       - frontend
 
@@ -257,6 +258,34 @@ services:
     networks:
       - monitoring
 
+  loki:
+    image: grafana/loki:3.7.0
+    restart: unless-stopped
+    command:
+      - -config.file=/etc/loki/loki-config.yml
+    volumes:
+      - ./monitoring/loki/loki-config.yml:/etc/loki/loki-config.yml:ro
+      - loki_data:/loki
+    mem_limit: 256m
+    networks:
+      - monitoring
+
+  promtail:
+    image: grafana/promtail:3.6.11
+    restart: unless-stopped
+    command:
+      - -config.file=/etc/promtail/promtail-config.yml
+    volumes:
+      - ./monitoring/promtail/promtail-config.yml:/etc/promtail/promtail-config.yml:ro
+      - nginx_logs:/var/log/nginx:ro
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,size=16m
+    mem_limit: 64m
+    depends_on:
+      - loki
+    networks:
+      - monitoring
+
 networks:
   backend:
     name: asset_management_16_backend
@@ -283,3 +312,7 @@ volumes:
     name: asset_management_16_prometheus_data
   grafana_data:
     name: asset_management_16_grafana_data
+  loki_data:
+    name: asset_management_16_loki_data
+  nginx_logs:
+    name: asset_management_16_nginx_logs
